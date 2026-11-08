@@ -10,16 +10,12 @@ PHP / Laravel client for the [DzWallet](https://dzwallet.app) payment API: accep
 
 ## Install
 
-While the package is not on Packagist, add it from a folder or your own repository.
-
-```json
-"repositories": [{ "type": "path", "url": "../dzwallet-laravel-sdk" }]
-```
-
 ```bash
 composer require dzwallet/laravel-sdk
 php artisan vendor:publish --tag=dzwallet-config   # optional
 ```
+
+Laravel finds the package by itself (no change to `config/app.php`). Requires PHP 8.1+ and Laravel 10, 11 or 12.
 
 ## Configure
 
