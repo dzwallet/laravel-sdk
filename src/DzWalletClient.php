@@ -255,6 +255,88 @@ class DzWalletClient
     }
 
     /**
+     * Verify the v2 notification signature on the EXACT raw request body.
+     * Header: X-DzWallet-Signature: t=<unix>,v1=<hex>; signed text is "<t>.<raw body>" with your secret key.
+     * Rejects bad signatures and timestamps further than $tolerance seconds from now.
+     * The event id is read from the signed body (a header can be changed by anyone who captured the request).
+     *
+     * @return array{timestamp:int,event_id:?string}
+     */
+    public function verifyWebhook(string $rawBody, ?string $signatureHeader, ?int $tolerance = null, ?int $now = null, ?string $eventIdHeader = null): array
+    {
+        $tolerance ??= (int) ($this->config['ipn']['tolerance'] ?? 300);
+        $timestamp = null;
+        $sigs = [];
+        foreach (explode(',', (string) $signatureHeader) as $part) {
+            $kv = explode('=', trim($part), 2);
+            if (count($kv) !== 2) {
+                continue;
+            }
+            if ($kv[0] === 't') {
+                $timestamp = ctype_digit($kv[1]) ? (int) $kv[1] : null;
+            } elseif ($kv[0] === 'v1') {
+                $sigs[] = strtolower($kv[1]);
+            }
+        }
+        if ($timestamp === null || !$sigs) {
+            throw new InvalidSignatureException('The signature header is missing or malformed.');
+        }
+        $expected = hash_hmac('sha256', $timestamp . '.' . $rawBody, $this->secretKey());
+        $ok = false;
+        foreach ($sigs as $sig) {
+            if (hash_equals($expected, $sig)) {
+                $ok = true;
+            }
+        }
+        if (!$ok) {
+            throw new InvalidSignatureException('The notification signature is not valid.');
+        }
+        if (abs(($now ?? time()) - $timestamp) > $tolerance) {
+            throw new InvalidSignatureException('The notification timestamp is outside the allowed window.');
+        }
+        parse_str($rawBody, $fields);
+        $eventId = isset($fields['event_id']) ? (string) $fields['event_id'] : null;
+        if ($eventIdHeader !== null && $eventId !== null && !hash_equals($eventId, $eventIdHeader)) {
+            throw new InvalidSignatureException('The event id header does not match the signed body.');
+        }
+        return ['timestamp' => $timestamp, 'event_id' => $eventId];
+    }
+
+    /** Build the notification object from an already verified request (no signature check). */
+    public function ipnFromPayload(array $payload): IpnPayload
+    {
+        $identifier = (string) ($payload['identifier'] ?? '');
+        $data = $payload['data'] ?? [];
+        if (is_string($data)) {
+            $decoded = json_decode($data, true);
+            $data = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($data) || $identifier === '' || !isset($data['amount'])) {
+            throw new InvalidSignatureException('The notification is incomplete.');
+        }
+        return new IpnPayload((string) ($payload['status'] ?? ''), $identifier, $data, $payload);
+    }
+
+    /**
+     * Verify a notification request: v2 (raw body, timestamp, event id) when the header is present,
+     * otherwise the older signature, unless config dzwallet.ipn.require_v2 is true.
+     *
+     * @return array{0:IpnPayload,1:?string} the notification and its event id (null for the older signature)
+     */
+    public function verifyNotification(\Illuminate\Http\Request $request): array
+    {
+        $header = $request->header('X-DzWallet-Signature');
+        if ($header !== null && $header !== '') {
+            $meta = $this->verifyWebhook($request->getContent(), $header, null, null, $request->header('X-DzWallet-Event-Id'));
+            return [$this->ipnFromPayload($request->all()), $meta['event_id']];
+        }
+        if (!empty($this->config['ipn']['require_v2'])) {
+            throw new InvalidSignatureException('A signed v2 notification is required.');
+        }
+        return [$this->verifyIpn($request->all()), null];
+    }
+
+    /**
      * Verifies a notification and returns it. Throws InvalidSignatureException when it is not authentic.
      *
      * Pass $expectedIdentifier and $expectedAmount from YOUR order record: a valid signature proves the

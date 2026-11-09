@@ -66,7 +66,7 @@ return redirect()->away($payment->redirectUrl);
 
 DzWallet calls your `ipn_url` after the gateway confirms the payment. Two ways to receive it.
 
-**1. Ready-made route.** Set `DZWALLET_IPN_ENABLED=true`. The package registers `POST /dzwallet/ipn` (CSRF-exempt), verifies the signature and fires an event:
+**1. Ready-made route.** Set `DZWALLET_IPN_ENABLED=true`. The package registers `POST /dzwallet/ipn` (CSRF-exempt), verifies the signature on the raw body, rejects old timestamps, ignores events it already handled and fires an event:
 
 ```php
 use DzWallet\Events\PaymentNotificationReceived;
@@ -74,6 +74,7 @@ use Illuminate\Support\Facades\Event;
 
 Event::listen(PaymentNotificationReceived::class, function ($event) {
     $ipn = $event->ipn;                               // signature already verified
+    // $event->eventId is the unique event id (the same on every retry)
     $order = Order::where('identifier', $ipn->identifier)->first();
 
     if (!$order || !$ipn->isSuccess()) return;
@@ -101,9 +102,20 @@ Route::post('/pay/ipn', function (Request $request) {
 })->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class]);
 ```
 
-Or protect a route with the middleware alias: `->middleware('dzwallet.signature')` (rejects bad signatures with 403 and exposes `$request->attributes->get('dzwallet.ipn')`).
+Or protect a route with the middleware alias: `->middleware('dzwallet.signature')` (rejects bad signatures with 403 and exposes `$request->attributes->get('dzwallet.ipn')` and `$request->attributes->get('dzwallet.event_id')`).
 
-The signature is `UPPERCASE(HMAC-SHA256(data.amount + identifier, SECRET_KEY))`. The package checks it for you with `hash_equals`.
+### How notifications are signed (v2)
+
+Every notification carries `X-DzWallet-Signature: t=<unix time>,v1=<hex>`, where `v1 = HMAC-SHA256(secret, t + "." + raw body)`, plus `X-DzWallet-Event-Id`. The package:
+
+- verifies the signature on the **exact raw body**, so any changed field (status, amount, transaction) is rejected;
+- rejects a timestamp more than 5 minutes from your server clock (`DZWALLET_IPN_TOLERANCE`, seconds);
+- reads the event id from the signed body and, on the ready-made route, ignores an event it already handled (`DZWALLET_IPN_DEDUPE`, kept 7 days in your cache; the cache driver must support locks: file, database, redis, memcached);
+- falls back to the older `signature` field (uppercase HMAC of `data.amount + identifier`) so existing integrations keep working. Set `DZWALLET_IPN_REQUIRE_V2=true` to refuse it once you no longer need it.
+
+Keep your own order update idempotent as well: the cache can be cleared, and a notification can be redelivered from the merchant dashboard (Webhook Log) with the same event id.
+
+To verify by hand: `[$ipn, $eventId] = DzWallet::verifyNotification($request);` or `DzWallet::verifyWebhook($request->getContent(), $request->header('X-DzWallet-Signature'))`.
 
 ## Check a payment from your server
 

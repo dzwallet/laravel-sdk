@@ -1,7 +1,16 @@
 {
     "name": "dzwallet/laravel-sdk",
     "description": "PHP / Laravel SDK for the DzWallet payment API (CIB and Edahabia card payments through SATIM, payment links and QR codes).",
-    "keywords": ["dzwallet", "algeria", "satim", "cib", "edahabia", "payment", "laravel", "sdk"],
+    "keywords": [
+        "dzwallet",
+        "algeria",
+        "satim",
+        "cib",
+        "edahabia",
+        "payment",
+        "laravel",
+        "sdk"
+    ],
     "license": "MIT",
     "type": "library",
     "require": {
@@ -27,14 +36,20 @@
     },
     "extra": {
         "laravel": {
-            "providers": ["DzWallet\\DzWalletServiceProvider"],
-            "aliases": {"DzWallet": "DzWallet\\Facades\\DzWallet"}
+            "providers": [
+                "DzWallet\\DzWalletServiceProvider"
+            ],
+            "aliases": {
+                "DzWallet": "DzWallet\\Facades\\DzWallet"
+            }
         }
     },
     "scripts": {
         "test": "phpunit"
     },
-    "config": {"sort-packages": true},
+    "config": {
+        "sort-packages": true
+    },
     "minimum-stability": "stable",
     "prefer-stable": true
 }

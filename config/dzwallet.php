@@ -49,5 +49,12 @@ return [
         'enabled' => (bool) env('DZWALLET_IPN_ENABLED', false),
         'path' => env('DZWALLET_IPN_PATH', 'dzwallet/ipn'),
         'middleware' => [],
+        // Reject notifications that do not carry the v2 signature (raw body + timestamp + event id).
+        'require_v2' => (bool) env('DZWALLET_IPN_REQUIRE_V2', false),
+        // Allowed clock difference between DzWallet and your server, in seconds.
+        'tolerance' => (int) env('DZWALLET_IPN_TOLERANCE', 300),
+        // Ignore events (by event id) that the ready-made route already handled.
+        'dedupe' => (bool) env('DZWALLET_IPN_DEDUPE', true),
+        'dedupe_days' => (int) env('DZWALLET_IPN_DEDUPE_DAYS', 7),
     ],
 ];
