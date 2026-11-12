@@ -327,8 +327,10 @@ class DzWalletClient
     {
         $header = $request->header('X-DzWallet-Signature');
         if ($header !== null && $header !== '') {
-            $meta = $this->verifyWebhook($request->getContent(), $header, null, null, $request->header('X-DzWallet-Event-Id'));
-            return [$this->ipnFromPayload($request->all()), $meta['event_id']];
+            $rawBody = $request->getContent();
+            $meta = $this->verifyWebhook($rawBody, $header, null, null, $request->header('X-DzWallet-Event-Id'));
+            parse_str($rawBody, $payload);
+            return [$this->ipnFromPayload($payload), $meta['event_id']];
         }
         if (!empty($this->config['ipn']['require_v2'])) {
             throw new InvalidSignatureException('A signed v2 notification is required.');
